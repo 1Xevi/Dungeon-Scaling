@@ -1,0 +1,131 @@
+package net.dungeon_scaling.mixin;
+
+import net.dungeon_scaling.DungeonScaling;
+import net.dungeon_scaling.logic.MathHelper;
+import net.dungeon_scaling.logic.PatternMatching;
+import net.dungeon_scaling.util.Compat.CIdentifier;
+import net.minecraft.world.MobSpawnerEntry;
+import net.minecraft.world.MobSpawnerLogic;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.mob.Monster;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.registry.Registries;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+@Mixin(MobSpawnerLogic.class)
+public class MobSpawnerLogicMixin {
+    @Shadow private int spawnRange;
+    @Shadow private int spawnCount;
+    @Shadow private int maxNearbyEntities;
+    @Shadow private int minSpawnDelay;
+    @Shadow private int maxSpawnDelay;
+    @Shadow private int requiredPlayerRange;
+
+    @Shadow private MobSpawnerEntry spawnEntry;
+    private boolean initialized = false;
+
+    private static String modifiedKey = "modified_by_" + DungeonScaling.MODID;
+
+    @Inject(method = "serverTick", at = @At("HEAD"))
+    private void pre_serverTick(ServerWorld world, BlockPos pos, CallbackInfo ci) {
+        if(!initialized) {
+            if(this.spawnEntry == null) {
+                return;
+            }
+
+            try {
+                var entityIdString = this.spawnEntry.getNbt().getString("id");
+
+                RegistryEntry<EntityType<?>> typeEntry = null;
+                var isMonster = false;
+                if (entityIdString != null && !entityIdString.isEmpty()) {
+                    var id = CIdentifier.of(entityIdString);
+                    typeEntry = Registries.ENTITY_TYPE.getEntry(RegistryKey.of(RegistryKeys.ENTITY_TYPE, id)).orElse(null);
+
+                    if (typeEntry != null) {
+                        var entityType = typeEntry.value();
+                        var testEntity = entityType.create(world);
+                        isMonster = testEntity instanceof Monster;
+                    }
+                }
+
+                var entityData = new PatternMatching.EntityData(typeEntry, isMonster);
+                var locationData = PatternMatching.LocationData.create(world, pos);
+                var scaling = PatternMatching.getModifiersForSpawner(locationData, entityData, world);
+//                if (modifiers.size() > 0) {
+//                    System.out.println("Scaling spawner of: " + entityId + " at: " + pos);
+//                }
+                scaleSpawner(scaling);
+                initialized = true;
+            } catch (Exception e) {
+                // e.printStackTrace();
+            }
+        }
+    }
+
+    private void scaleSpawner(PatternMatching.SpawnerScaleResult scaling) {
+//        if (scaling.modifiers().size() > 0) {
+//            System.out.println("Spawner before scaling");
+//            System.out.println(" spawnRange:" + this.spawnRange
+//                    + " spawnCount:" + this.spawnCount
+//                    + " maxNearbyEntities:" + this.maxNearbyEntities
+//                    + " minSpawnDelay:" + this.minSpawnDelay
+//                    + " maxSpawnDelay:" + this.maxSpawnDelay
+//                    + " requiredPlayerRange:" + this.requiredPlayerRange);
+//        }
+        float spawnRange = 0;
+        float spawnCount = 0;
+        float maxNearbyEntities = 0;
+        float minSpawnDelay = 0;
+        float maxSpawnDelay = 0;
+        float requiredPlayerRange = 0;
+        for(var modifier: scaling.modifiers()) {
+            spawnRange += scaling.level() * modifier.spawn_range_multiplier;
+            spawnCount += scaling.level() * modifier.spawn_count_multiplier;
+            maxNearbyEntities += scaling.level() * modifier.max_nearby_entities_multiplier;
+            minSpawnDelay += scaling.level() * modifier.min_spawn_delay_multiplier;
+            maxSpawnDelay += scaling.level() * modifier.max_spawn_delay_multiplier;
+            requiredPlayerRange += scaling.level() * modifier.required_player_range_multiplier;
+        }
+        this.spawnRange = MathHelper.clamp(Math.round(this.spawnRange * (1F + spawnRange)), 0, 100);
+        this.spawnCount = MathHelper.clamp(Math.round(this.spawnCount * (1F + spawnCount)), 1, 20);
+        this.maxNearbyEntities = MathHelper.clamp(Math.round(this.maxNearbyEntities * (1F + maxNearbyEntities)), 0, 40);
+        this.minSpawnDelay = MathHelper.clamp(Math.round(this.minSpawnDelay * (1F + minSpawnDelay)), 10, 20000);
+        this.maxSpawnDelay = MathHelper.clamp(Math.round(this.maxSpawnDelay * (1F + maxSpawnDelay)), 20, 20000);
+        this.requiredPlayerRange = MathHelper.clamp(Math.round(this.requiredPlayerRange * (1F + requiredPlayerRange)), 1, 200);
+
+//        if (scaling.modifiers().size() > 0) {
+//            this.spawnEntry.getNbt().putBoolean(modifiedKey, true);
+//            System.out.println("Spawner scaled");
+//            System.out.println(" spawnRange:" + this.spawnRange
+//                    + " spawnCount:" + this.spawnCount
+//                    + " maxNearbyEntities:" + this.maxNearbyEntities
+//                    + " minSpawnDelay:" + this.minSpawnDelay
+//                    + " maxSpawnDelay:" + this.maxSpawnDelay
+//                    + " requiredPlayerRange:" + this.requiredPlayerRange);
+//        }
+    }
+
+    @Inject(method = "writeNbt", at = @At("HEAD"))
+    private void pre_writeNbt(NbtCompound nbt, CallbackInfoReturnable<NbtCompound> cir) {
+        nbt.putBoolean(modifiedKey, initialized);
+    }
+
+    @Inject(method = "readNbt", at = @At("HEAD"))
+    private void pre_readNbt(World world, BlockPos pos, NbtCompound nbt, CallbackInfo ci) {
+        if(nbt.contains(modifiedKey)) {
+            initialized = nbt.getBoolean(modifiedKey);
+        }
+    }
+}

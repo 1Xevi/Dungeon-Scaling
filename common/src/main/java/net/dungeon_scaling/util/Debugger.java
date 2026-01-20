@@ -1,0 +1,23 @@
+package net.dungeon_scaling.util;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import net.dungeon_scaling.DungeonScaling;
+
+public class Debugger {
+    public static final Logger LOGGER = LoggerFactory.getLogger(DungeonScaling.MODID);
+
+    public static boolean enabled = false;
+
+    public static void log(String message) {
+        if (enabled) {
+            LOGGER.info("[Debug] " + message);
+        }
+    }
+
+    public static void log(String message, Throwable throwable) {
+        if (enabled) {
+            LOGGER.info("[Debug] " + message, throwable);
+        }
+    }
+}

@@ -1,0 +1,11 @@
+{
+  "item.power.level": "§f\uD833\uDEE0§r Nivel de Poder: %s",
+  "difficulty.type.normal": "Normal",
+  "difficulty.type.adventure": "\uD833\uDEE1 Aventura",
+  "difficulty.type.dungeon": "\uD833\uDEE2 Mazmorra",
+  "difficulty.type.apocalypse": "\uD833\uDEE3 Apocalipsis",
+  "difficulty.type.boss_dungeon": "\uD833\uDEE3 Mazmorra de Jefe",
+  "difficulty.type.boss": "\uD833\uDEE3 Jefe",
+  "difficulty.type.heroic": "\uD833\uDEE3 Heroico",
+  "difficulty.type.mythic": "\uD833\uDEE3 Mítico"
+}

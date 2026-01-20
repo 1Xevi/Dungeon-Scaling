@@ -1,0 +1,40 @@
+{
+	"providers": [
+		{
+			"type": "bitmap",
+			"file": "dungeon_scaling:symbol/power_level.png",
+			"ascent": 8,
+			"height": 9,
+			"chars": [
+				"\uD833\uDEE0"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "dungeon_scaling:symbol/skull_1.png",
+			"ascent": 8,
+			"height": 9,
+			"chars": [
+				"\uD833\uDEE1"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "dungeon_scaling:symbol/skull_2.png",
+			"ascent": 8,
+			"height": 9,
+			"chars": [
+				"\uD833\uDEE2"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "dungeon_scaling:symbol/skull_3.png",
+			"ascent": 8,
+			"height": 9,
+			"chars": [
+				"\uD833\uDEE3"
+			]
+		}
+	]
+}
