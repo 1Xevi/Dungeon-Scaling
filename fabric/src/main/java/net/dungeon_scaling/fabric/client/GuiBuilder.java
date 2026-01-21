@@ -46,7 +46,7 @@ public class GuiBuilder {
                 .description(OptionDescription.of(Text.literal("ADDITION: Adds a flat amount.\nMULTIPLY_BASE: Multiplies the base value (e.g. 0.5 = +50%).")))
                 .binding(item.operation, () -> item.operation, v -> item.operation = v)
                 .controller(opt -> EnumControllerBuilder.create(opt).enumClass(Operation.class))
-                .addListener(onUpdate(val -> item.operation = val, ctx.refreshSelf()))
+                //.addListener(onUpdate(val -> item.operation = val, ctx.refreshSelf()))
                 .build());
     }
 
@@ -69,7 +69,14 @@ public class GuiBuilder {
                 .binding(item.entity_matches.type != null ? item.entity_matches.type : "",
                         () -> item.entity_matches.type, v -> item.entity_matches.type = v)
                 .controller(opt -> DropdownStringControllerBuilder.create(opt).values(getRegistryIds(Registries.ENTITY_TYPE)))
-                .addListener(onUpdate(val -> item.entity_matches.type = val, ctx.refreshSelf()))
+                //.addListener(onUpdate(val -> item.entity_matches.type = val, ctx.refreshSelf()))
+                .build());
+
+        builder.option(Option.<Float>createBuilder()
+                .name(Text.literal("Experience Multiplier"))
+                .description(OptionDescription.of(Text.literal("Bonus XP dropped. (e.g., 0.5 = +50% XP).")))
+                .binding(item.experience_multiplier, () -> item.experience_multiplier, v -> item.experience_multiplier = v)
+                .controller(opt -> FloatFieldControllerBuilder.create(opt).range(0f, 2f))
                 .build());
 
         // sublist for attributes
@@ -132,54 +139,12 @@ public class GuiBuilder {
 
     private static void injectEditor(BuilderContext<OptionGroup.Builder> ctx, ConfigServer.ScalingRule item) {
         var builder = ctx.builder();
+        var parent = ctx.parent();
 
         List<String> validDifficulties = ConfigServer.fetch().difficulty_types.stream()
                 .map(type -> type.name)
                 .sorted()
                 .toList();
-
-        // dimension
-        builder.option(Option.<String>createBuilder()
-                .name(Text.literal("Dimension"))
-                .description(OptionDescription.of(Text.literal("The Dimension ID where this rule applies (e.g. 'minecraft:the_nether').")))
-                .binding(item.match.dimension, () -> item.match.dimension, v -> item.match.dimension = v)
-                .controller(StringControllerBuilder::create)
-                //.addListener(onUpdate(val -> item.match.dimension = val, ctx.refreshSelf()))
-                .build());
-
-        // structure
-        builder.option(Option.<String>createBuilder()
-                .name(Text.literal("Structure"))
-                .description(OptionDescription.of(Text.literal("If set, this rule only applies inside this specific structure.")))
-                .binding(item.match.structure, () -> item.match.structure, v -> item.match.structure = v)
-                .controller(opt -> DropdownStringControllerBuilder.create(opt)
-                        .values(GuiUtils.getRegistryIds(RegistryKeys.STRUCTURE))
-                )
-                .addListener(onUpdate(val -> item.match.structure = val, ctx.refreshSelf()))
-                .build());
-
-        // biome
-        builder.option(Option.<String>createBuilder()
-                .name(Text.literal("Biome"))
-                .description(OptionDescription.of(Text.literal("If set, this rule only applies inside this specific biome.")))
-                .binding(item.match.biome, () -> item.match.biome, v -> item.match.biome = v)
-                .controller(opt -> DropdownStringControllerBuilder.create(opt)
-                        .values(GuiUtils.getRegistryIds(RegistryKeys.BIOME))
-                )
-                .addListener(onUpdate(val -> item.match.biome = val, ctx.refreshSelf()))
-                .build());
-
-        // entity
-        builder.option(Option.<String>createBuilder()
-                .name(Text.literal("Entity"))
-                .description(OptionDescription.of(Text.literal("If set, this rule only applies inside this specific entity.")))
-                .binding(item.match.entity, () -> item.match.entity, v -> item.match.entity = v)
-                .controller(opt -> DropdownStringControllerBuilder.create(opt)
-                        .values(GuiUtils.getRegistryIds(RegistryKeys.ENTITY_TYPE))
-                )
-                .addListener(onUpdate(val -> item.match.entity = val, ctx.refreshSelf())) //
-                .build());
-
 
         // difficulty assignment
         builder.option(Option.<String>createBuilder()
@@ -190,7 +155,8 @@ public class GuiBuilder {
                         .values(validDifficulties) // Pass the list we generated above!
                 )
                 .addListener(onUpdate(val -> item.difficulty.name = val, ctx.refreshSelf()))
-                .build());
+                .build()
+        );
 
         builder.option(Option.<Integer>createBuilder()
                 .name(Text.literal("Difficulty Level"))
@@ -200,17 +166,28 @@ public class GuiBuilder {
                         .range(0, 10)
                         .step(1))
                 //.addListener(onUpdate(val -> item.difficulty.level = val, ctx.refreshSelf()))
-                .build());
+                .build()
+        );
 
-        builder.option(Option.<Integer>createBuilder()
-                .name(Text.literal("Difficulty Level"))
-                .description(OptionDescription.of(Text.literal("The scaling multiplier level. Higher levels = stronger mobs/loot based on the Difficulty.")))
-                .binding(item.difficulty.level, () -> item.difficulty.level, v -> item.difficulty.level = v)
-                .controller(opt -> IntegerSliderControllerBuilder.create(opt)
-                        .range(0, 10)
-                        .step(1))
-                //.addListener(onUpdate(val -> item.difficulty.level = val, ctx.refreshSelf()))
-                .build());
+        builder.option(ButtonOption.createBuilder()
+                .name(Text.literal("§b[>] Edit Match Criteria"))
+                .description(OptionDescription.of(Text.literal("Configure Dimension, Biome, Structure, or Entity targets.")))
+                .action((s, b) -> MinecraftClient.getInstance().setScreen(
+                        GuiUtils.createGeneric(
+                                s,
+                                Text.literal("Match Criteria"),
+                                item.match,
+                                (saved) -> AutoConfig.getConfigHolder(ConfigServer.class).save(),
+                                null,
+                                (catBuilder) -> {
+                                    var subCtx = new BuilderContext<>(catBuilder, s, () -> MinecraftClient.getInstance().setScreen(create(parent)));
+
+                                    injectEditor(subCtx, item.match);
+                                },
+                                () -> MinecraftClient.getInstance().setScreen(create(parent))
+                        )
+                )).build()
+        );
 
         // sublist for overrides (recursive)
         addSubListButton(
@@ -221,6 +198,42 @@ public class GuiBuilder {
                 r -> r.match.structure.isEmpty() ? r.match.dimension : r.match.structure,
                 r -> "§7Difficulty: " + r.difficulty.name + " (Lvl " + r.difficulty.level + ")",
                 GuiBuilder::injectEditor);
+    }
+
+    private static void injectEditor(BuilderContext<ConfigCategory.Builder> ctx, ConfigServer.ScalingRule.Context match) {
+        var builder = ctx.builder();
+
+        builder.option(Option.<String>createBuilder()
+                .name(Text.literal("Registry Lookup"))
+                .description(OptionDescription.of(Text.literal("Search for IDs here. Does NOT save to config.")))
+                .binding("", () -> "", v -> {})
+                .controller(opt -> DropdownStringControllerBuilder.create(opt)
+                        .values(GuiUtils.getRegistryIds(RegistryKeys.STRUCTURE)))
+                .build());
+
+        builder.option(Option.<String>createBuilder()
+                .name(Text.literal("Dimension ID / Regex"))
+                .binding(match.dimension, () -> match.dimension, v -> match.dimension = v)
+                .controller(StringControllerBuilder::create)
+                .build());
+
+        builder.option(Option.<String>createBuilder()
+                .name(Text.literal("Biome ID / Regex"))
+                .binding(match.biome, () -> match.biome, v -> match.biome = v)
+                .controller(StringControllerBuilder::create)
+                .build());
+
+        builder.option(Option.<String>createBuilder()
+                .name(Text.literal("Structure ID / Regex"))
+                .binding(match.structure, () -> match.structure, v -> match.structure = v)
+                .controller(StringControllerBuilder::create)
+                .build());
+
+        builder.option(Option.<String>createBuilder()
+                .name(Text.literal("Entity ID / Regex"))
+                .binding(match.entity, () -> match.entity, v -> match.entity = v)
+                .controller(StringControllerBuilder::create)
+                .build());
     }
 
 
@@ -374,6 +387,13 @@ public class GuiBuilder {
                     b.option(Option.<String>createBuilder()
                             .name(Text.literal("Preset Name"))
                             .binding(preset.name, () -> preset.name, v -> preset.name = v)
+                            .controller(StringControllerBuilder::create)
+                            //.addListener(onUpdate(v -> preset.name = v, c.refreshSelf()))
+                            .build());
+
+                    b.option(Option.<String>createBuilder()
+                            .name(Text.literal("Preset Parent"))
+                            .binding(preset.parent, () -> preset.parent, v -> preset.parent = v)
                             .controller(StringControllerBuilder::create)
                             //.addListener(onUpdate(v -> preset.name = v, c.refreshSelf()))
                             .build());

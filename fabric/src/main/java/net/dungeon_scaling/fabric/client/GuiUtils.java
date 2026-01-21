@@ -213,25 +213,20 @@ public class GuiUtils {
         List<String> result;
         var client = MinecraftClient.getInstance();
 
-        try {
-            // 2. Try In-Game World Registry
-            if (client.world != null) {
-                // Safely attempt to get the registry.
-                // We use getOptional if possible, but try-catch is safer for cross-loader/version compat.
+        if (client.world != null) {
+            try {
                 var regOptional = client.world.getRegistryManager().getOptional(key);
                 if (regOptional.isPresent()) {
                     result = getRegistryIds(regOptional.get());
                     REGISTRY_CACHE.put(key, result);
                     return result;
                 }
-            }
-        } catch (Exception ignored) {
+            } catch (Exception ignored) {
 
+            }
         }
 
-        if (client.world != null) {
-            result = getRegistryIds(client.world.getRegistryManager().get(key));
-        } else if (key.equals(RegistryKeys.ENTITY_TYPE)) {
+        if (key.equals(RegistryKeys.ENTITY_TYPE)) {
             result = getRegistryIds(Registries.ENTITY_TYPE);
         } else if (key.equals(RegistryKeys.ITEM)) {
             result = getRegistryIds(Registries.ITEM);
@@ -260,5 +255,21 @@ public class GuiUtils {
 
         REGISTRY_CACHE.put(key, result);
         return result;
+    }
+
+    public static boolean wouldLoop(ConfigServer.DifficultyType child, String candidateParentName, List<ConfigServer.DifficultyType> allTypes) {
+        String current = candidateParentName;
+        // Walk up the tree from the candidate. If we find 'child', it's a loop.
+        for(int i = 0; i < 100; i++) { // Limit 100 to prevent infinite loops during the check itself
+            if (current == null || current.isEmpty()) return false; // Reached root, safe.
+            if (current.equals(child.name)) return true; // Found ourselves! Cycle!
+
+            String finalCurrent = current;
+            var next = allTypes.stream().filter(t -> t.name.equals(finalCurrent)).findFirst();
+            if (next.isEmpty()) return false;
+
+            current = next.get().parent;
+        }
+        return false;
     }
 }
