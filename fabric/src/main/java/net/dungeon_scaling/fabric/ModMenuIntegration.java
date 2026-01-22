@@ -7,9 +7,9 @@ import net.dungeon_scaling.fabric.client.*;
 public class ModMenuIntegration implements ModMenuApi {
     @Override
     public ConfigScreenFactory<?> getModConfigScreenFactory() {
-        return parent -> {
+        return configScreen -> {
             GuiUtils.clearCache();
-            return GuiBuilder.create(parent);
+            return GuiBuilder.create(configScreen);
         };
     }
 }

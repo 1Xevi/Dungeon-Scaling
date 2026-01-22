@@ -16,6 +16,7 @@ import java.util.List;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -36,10 +37,6 @@ public class GuiUtils {
             B builder,
             Screen parent,
             Runnable refreshSelf) {
-
-        public void refresh() {
-            if (refreshSelf != null) refreshSelf.run();
-        }
     }
 
     public static <T> OptionEventListener<T> onUpdate(Consumer<T> setter, Runnable refresher) {
@@ -55,32 +52,46 @@ public class GuiUtils {
     public static <T> Screen createGeneric(
             Screen parent,
             Text title,
-            T item,
-            Consumer<T> saveConsumer,
-            @Nullable Runnable deleteAction,
-            Consumer<ConfigCategory.Builder> contentInjector,
-            @Nullable Runnable onSaveAndClose
+            T configObject,
+            Consumer<BuilderContext<ConfigCategory.Builder>> contentGenerator,
+            Runnable onReturn
     ) {
-        var categoryBuilder = ConfigCategory.createBuilder().name(title);
-        contentInjector.accept(categoryBuilder);
+        return new ScreenFactory(parent, title, contentGenerator, onReturn).build();
+    }
 
-        if (deleteAction != null) {
-            categoryBuilder.option(ButtonOption.createBuilder()
-                    .name(Text.literal("§c[X] Delete Entry"))
-                    .description(OptionDescription.of(Text.literal("Permanently remove this entry.")))
-                    .action((s, b) -> deleteAction.run())
-                    .build());
+    private static class ScreenFactory {
+        private final Screen parent;
+        private final Text title;
+        private final Consumer<BuilderContext<ConfigCategory.Builder>> contentGenerator;
+        private final Runnable onReturn;
+
+        public ScreenFactory(Screen parent, Text title, Consumer<BuilderContext<ConfigCategory.Builder>> contentGenerator, Runnable onReturn) {
+            this.parent = parent;
+            this.title = title;
+            this.contentGenerator = contentGenerator;
+            this.onReturn = onReturn;
         }
 
-        return YetAnotherConfigLib.createBuilder()
-                .title(title)
-                .category(categoryBuilder.build())
-                .save(() -> {
-                    saveConsumer.accept(item);
-                    if (onSaveAndClose != null) onSaveAndClose.run();
-                })
-                .build()
-                .generateScreen(parent);
+        public Screen build() {
+            var builder = YetAnotherConfigLib.createBuilder()
+                    .title(title);
+
+            var catBuilder = ConfigCategory.createBuilder()
+                    .name(Text.literal("Settings"));
+
+            Runnable refreshAction = () -> {
+                AutoConfig.getConfigHolder(ConfigServer.class).save();
+                MinecraftClient.getInstance().setScreen(this.build());
+            };
+
+            contentGenerator.accept(new BuilderContext<>(catBuilder, parent, refreshAction));
+
+            return builder
+                    .category(catBuilder.build())
+                    .save(refreshAction)
+                    .build()
+                    .generateScreen(parent);
+        }
     }
 
     // generic list builder
@@ -88,28 +99,27 @@ public class GuiUtils {
             BuilderContext<ConfigCategory.Builder> ctx,
             String listTitle, String itemLabel,
             List<T> list,
-            Supplier<T> constructor,
+            Supplier<T> factory,
             Function<T, String> nameProvider,
             Function<T, String> descriptionProvider,
-            EditorInjector<T> injector
+            BiConsumer<BuilderContext<OptionGroup.Builder>, T> editorInjector
     ) {
-        var headerGroup = OptionGroup.createBuilder().name(Text.literal(listTitle)).collapsed(false);
-        var category = ctx.builder();
-        var parent = ctx.parent();
-
+        var headerGroup = OptionGroup.createBuilder()
+                .name(Text.literal(listTitle))
+                .collapsed(false);
         headerGroup.option(ButtonOption.createBuilder()
                 .name(Text.literal("§a[+] Add New " + itemLabel))
                 .action((s, b) -> {
-                    list.add(constructor.get());
-                    AutoConfig.getConfigHolder(ConfigServer.class).save();
-                    MinecraftClient.getInstance().setScreen(GuiBuilder.create(parent));
+                    list.add(factory.get());
+                    //AutoConfig.getConfigHolder(ConfigServer.class).save();
+                    ctx.refreshSelf.run();
                 })
                 .build());
 
-        category.group(headerGroup.build());
+        ctx.builder.group(headerGroup.build());
 
         for (int i = 0; i < list.size(); i++) {
-            int finalI = i;
+            int index = i;
             T item = list.get(i);
 
             var itemGroup = OptionGroup.createBuilder()
@@ -117,20 +127,18 @@ public class GuiUtils {
                     .description(OptionDescription.of(Text.literal(descriptionProvider.apply(item))))
                     .collapsed(true);
 
-            var itemCtx = new BuilderContext<>(itemGroup, parent, ctx.refreshSelf());
-
-            injector.inject(itemCtx, item);
+            editorInjector.accept(new BuilderContext<>(itemGroup, ctx.parent, ctx.refreshSelf), item);
 
             itemGroup.option(ButtonOption.createBuilder()
                     .name(Text.literal("§c[X] Delete this entry"))
                     .action((s, b) -> {
-                        list.remove(finalI);
-                        AutoConfig.getConfigHolder(ConfigServer.class).save();
-                        MinecraftClient.getInstance().setScreen(GuiBuilder.create(parent));
+                        list.remove(index);
+                        //AutoConfig.getConfigHolder(ConfigServer.class).save();
+                        ctx.refreshSelf.run();
                     })
                     .build());
 
-            category.group(itemGroup.build());
+            ctx.builder.group(itemGroup.build());
         }
     }
 
@@ -139,18 +147,18 @@ public class GuiUtils {
             BuilderContext<OptionGroup.Builder> ctx,
             String title, String label,
             List<T> list,
-            Supplier<T> ctor,
-            Function<T, String> namer,
+            Supplier<T> factory,
+            Function<T, String> nameProvider,
             Function<T, String> descriptionProvider,
-            EditorInjector<T> injector)
-    {
+            BiConsumer<BuilderContext<OptionGroup.Builder>, T> editorInjector
+    ) {
         StringBuilder previewText = new StringBuilder("§7Contents:");
         if (list.isEmpty()) {
             previewText.append("\n§8(Empty)");
         } else {
             int limit = 5;
             for (int i = 0; i < Math.min(list.size(), limit); i++) {
-                previewText.append("\n§7- ").append(namer.apply(list.get(i)));
+                previewText.append("\n§7- ").append(nameProvider.apply(list.get(i)));
             }
             if (list.size() > limit) {
                 previewText.append("\n§8... and ").append(list.size() - limit).append(" more.");
@@ -163,21 +171,26 @@ public class GuiUtils {
         builder.option(ButtonOption.createBuilder()
                 .name(Text.literal("§e[>] Edit " + title + " §7(" + list.size() + ")"))
                 .description(OptionDescription.of(Text.literal(previewText.toString())))
-                .action((s, b) -> MinecraftClient.getInstance().setScreen(
-                        createGeneric(
-                                s,
-                                Text.literal(title),
-                                list,
-                                (saved) -> AutoConfig.getConfigHolder(ConfigServer.class).save(),
-                                null,
-                                (catBuilder) -> {
-                                    var subCtx = new BuilderContext<>(catBuilder, s, () -> MinecraftClient.getInstance().setScreen(GuiBuilder.create(parent)));
-
-                                    addGenericList(subCtx, title, label, list, ctor, namer, descriptionProvider, injector);
-                                },
-                                () -> MinecraftClient.getInstance().setScreen(GuiBuilder.create(parent))
-                        )
-                ))
+                .action((s, b) -> {
+                    MinecraftClient.getInstance().setScreen(
+                            createGeneric(
+                                    s,
+                                    Text.literal(title),
+                                    list,
+                                    (subCtx) -> addGenericList(
+                                            subCtx,
+                                            title,
+                                            label,
+                                            list,
+                                            factory,
+                                            nameProvider,
+                                            descriptionProvider,
+                                            editorInjector
+                                    ),
+                                    () -> MinecraftClient.getInstance().setScreen(s)
+                            )
+                    );
+                })
                 .build());
     }
 
@@ -259,10 +272,9 @@ public class GuiUtils {
 
     public static boolean wouldLoop(ConfigServer.DifficultyType child, String candidateParentName, List<ConfigServer.DifficultyType> allTypes) {
         String current = candidateParentName;
-        // Walk up the tree from the candidate. If we find 'child', it's a loop.
-        for(int i = 0; i < 100; i++) { // Limit 100 to prevent infinite loops during the check itself
-            if (current == null || current.isEmpty()) return false; // Reached root, safe.
-            if (current.equals(child.name)) return true; // Found ourselves! Cycle!
+        for(int i = 0; i < 100; i++) {
+            if (current == null || current.isEmpty()) return false;
+            if (current.equals(child.name)) return true;
 
             String finalCurrent = current;
             var next = allTypes.stream().filter(t -> t.name.equals(finalCurrent)).findFirst();

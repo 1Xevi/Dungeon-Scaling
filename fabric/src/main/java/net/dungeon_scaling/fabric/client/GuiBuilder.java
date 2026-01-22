@@ -13,6 +13,7 @@ import net.minecraft.registry.RegistryKeys;
 import net.minecraft.text.Text;
 
 import java.util.List;
+import java.util.ArrayList;
 
 import static net.dungeon_scaling.fabric.client.GuiUtils.*;
 
@@ -65,7 +66,7 @@ public class GuiBuilder {
 
         builder.option(Option.<String>createBuilder()
                 .name(Text.literal("Entity Type"))
-                .description(OptionDescription.of(Text.literal("The specific entity ID to target. If empty, matches all mobs allowed by the Attitude filter.")))
+                .description(OptionDescription.of(Text.literal("The specific entity type to target. If empty, matches all mobs allowed by the Attitude filter.")))
                 .binding(item.entity_matches.type != null ? item.entity_matches.type : "",
                         () -> item.entity_matches.type, v -> item.entity_matches.type = v)
                 .controller(opt -> DropdownStringControllerBuilder.create(opt).values(getRegistryIds(Registries.ENTITY_TYPE)))
@@ -177,14 +178,8 @@ public class GuiBuilder {
                                 s,
                                 Text.literal("Match Criteria"),
                                 item.match,
-                                (saved) -> AutoConfig.getConfigHolder(ConfigServer.class).save(),
-                                null,
-                                (catBuilder) -> {
-                                    var subCtx = new BuilderContext<>(catBuilder, s, () -> MinecraftClient.getInstance().setScreen(create(parent)));
-
-                                    injectEditor(subCtx, item.match);
-                                },
-                                () -> MinecraftClient.getInstance().setScreen(create(parent))
+                                (catBuilder) -> injectEditor(catBuilder, item.match),
+                                null
                         )
                 )).build()
         );
@@ -199,6 +194,92 @@ public class GuiBuilder {
                 r -> "§7Difficulty: " + r.difficulty.name + " (Lvl " + r.difficulty.level + ")",
                 GuiBuilder::injectEditor);
     }
+
+    private static void injectEditor(BuilderContext<ConfigCategory.Builder> ctx, ConfigServer.Rewards config) {
+        addGenericList(
+                ctx,
+                "§6§lWeapons List", "Weapon Rule",
+                config.weapons,
+                ConfigServer.ItemModifier::new,
+                ConfigServer.ItemModifier::getSummary,
+
+                (item) -> {
+                    if (item.attributes.isEmpty()) return "§cNo attributes defined.";
+                    var first = item.attributes.get(0);
+                    return "§7" + first.getSummary() + (item.attributes.size() > 1 ? "..." : "");
+                },
+                (c, item) -> {
+                    if (item.item_matches == null) item.item_matches = new ConfigServer.ItemModifier.Filters();
+                    var b = c.builder();
+                    // id dropdown
+                    b.option(Option.<String>createBuilder()
+                            .name(Text.literal("Target Item ID"))
+                            .description(OptionDescription.of(Text.literal("Leave empty to match by Regex.")))
+                            .binding("", () -> item.item_matches.id, v -> item.item_matches.id = v)
+                            .controller(opt -> DropdownStringControllerBuilder.create(opt).values(getRegistryIds(Registries.ITEM)))
+                            .build());
+
+                    // regex field
+                    b.option(Option.<String>createBuilder()
+                            .name(Text.literal("Loot Table Regex"))
+                            .binding("", () -> item.item_matches.loot_table_regex, v -> item.item_matches.loot_table_regex = v)
+                            .controller(StringControllerBuilder::create)
+                            .build());
+
+                    // attribute sublist (Recursive)
+                    addSubListButton(
+                            c,
+                            "Attributes", "Attribute",
+                            item.attributes,
+                            () -> new ConfigServer.AttributeModifier("minecraft:generic.attack_damage", 1.0f),
+                            AttributeModifier::getSummary,
+                            (attr) -> "§7Operation: " + attr.operation + "\n§7Value: " + attr.value,
+                            GuiBuilder::injectEditor
+                    );
+                }
+        );
+
+        // ARMOR LIST
+        addGenericList(ctx,
+                "§6§lArmor List",
+                "Armor Rule", config.armor,
+                ConfigServer.ItemModifier::new,
+                ConfigServer.ItemModifier::getSummary,
+
+                (item) -> {
+                    if (item.attributes.isEmpty()) return "§cNo attributes defined.";
+                    // Preview the first attribute
+                    var first = item.attributes.get(0);
+                    return "§7" + first.getSummary() + (item.attributes.size() > 1 ? "..." : "");
+                },
+                (c, item) -> {
+                    if (item.item_matches == null) item.item_matches = new ConfigServer.ItemModifier.Filters();
+
+                    var b = c.builder();
+                    b.option(Option.<String>createBuilder()
+                            .name(Text.literal("Target Item ID"))
+                            .binding("", () -> item.item_matches.id, v -> item.item_matches.id = v)
+                            .controller(opt -> DropdownStringControllerBuilder.create(opt).values(getRegistryIds(Registries.ITEM)))
+                            .build());
+
+                    b.option(Option.<String>createBuilder()
+                            .name(Text.literal("Loot Table Regex"))
+                            .binding("", () -> item.item_matches.loot_table_regex, v -> item.item_matches.loot_table_regex = v)
+                            .controller(StringControllerBuilder::create)
+                            .build());
+
+                    addSubListButton(c,
+                            "Attributes", "Attribute",
+                            item.attributes,
+                            () -> new ConfigServer.AttributeModifier("minecraft:generic.armor", 1.0f),
+                            AttributeModifier::getSummary,
+                            (attr) -> "§7Operation: " + attr.operation + "\n§7Value: " + attr.value,
+                            GuiBuilder::injectEditor
+                    );
+                }
+        );
+    }
+
 
     private static void injectEditor(BuilderContext<ConfigCategory.Builder> ctx, ConfigServer.ScalingRule.Context match) {
         var builder = ctx.builder();
@@ -237,25 +318,77 @@ public class GuiBuilder {
     }
 
 
-    // -- CATEGORY BUILDERS
+    private static void injectPresetEditor(BuilderContext<ConfigCategory.Builder> ctx, List<ConfigServer.DifficultyType> config) {
+        addGenericList(
+                ctx,
+                "§6§lDifficulty Presets", "Preset", config,
+                () -> new DifficultyType("new_preset"),
+                p -> p.name,
+                p -> "§7Parent: " + (p.parent != null ? p.parent : ""),
+                (c, p) -> {
+                    var b = c.builder();
+                    b.option(Option.<String>createBuilder()
+                            .name(Text.literal("Name"))
+                            .binding(p.name,
+                                    () -> p.name,
+                                    v -> p.name = v
+                            )
+                            .controller(StringControllerBuilder::create).build());
 
-    private static ConfigCategory buildCategory(ConfigServer.Meta key, ConfigServer config, Screen screen) {
-        var builder = ConfigCategory.createBuilder().name(Text.literal("Global"));
+                    List<String> parents = new ArrayList<>(config.stream()
+                            .map(t -> t.name)
+                            .filter(n -> !n.equals(p.name))
+                            .toList());
+
+                    parents.add(0, "");
+
+                    b.option(Option.<String>createBuilder()
+                            .name(Text.literal("Parent"))
+                            .binding(
+                                    p.parent,
+                                    () -> p.parent,
+                                    v -> p.parent = v
+                            )
+                            .controller(
+                                    o -> DropdownStringControllerBuilder.create(o)
+                                            .values(parents)
+                            )
+                            .build());
+
+                    addSubListButton(c, "Entity Rules", "Rule", p.entities, EntityModifier::new,
+                            m -> m.entity_matches.type == null ? "All Mobs" : m.entity_matches.type,
+                            m -> "§7" + m.attributes.size() + " Modifiers",
+                            GuiBuilder::injectEditor);
+                }
+        );
+    }
+
+    private static void injectRuleEditor(BuilderContext<ConfigCategory.Builder> ctx, List<ConfigServer.ScalingRule> config) {
+        addGenericList(ctx, "§6§lHierarchical Rules", "Rule", config,
+                ScalingRule::new,
+                r -> r.match.dimension.isEmpty() ? (r.match.biome.isEmpty() ? "Global Rule" : r.match.biome) : r.match.dimension,
+                r -> "§7" + r.difficulty.name + " (Lvl " + r.difficulty.level + ")",
+                GuiBuilder::injectEditor);
+    }
+
+    // -- CATEGORY BUILDERS
+    private static OptionGroup buildCategory(ConfigServer.Meta config, Screen screen) {
+        var builder = OptionGroup.createBuilder().name(Text.literal("§6§lGlobal"));
 
         builder.option(buildBool(
                 "Sanitize Config",
                 "Automatically validates and repairs the config file on startup to prevent crashes.",
                 DEFAULTS.meta.sanitize_config,
-                () -> config.meta.sanitize_config,
-                v -> config.meta.sanitize_config = v
+                () -> config.sanitize_config,
+                v -> config.sanitize_config = v
         ));
 
         builder.option(Option.<ConfigServer.RoundingMode>createBuilder()
                 .name(Text.literal("Rounding Precision"))
                 .description(OptionDescription.of(Text.literal("Snaps attribute values to the nearest grid. Use 'Very High' for speed, 'Whole Numbers' for damage.")))
                 .binding(DEFAULTS.meta.rounding_mode,
-                        () -> config.meta.rounding_mode,
-                        v -> config.meta.rounding_mode = v)
+                        () -> config.rounding_mode,
+                        v -> config.rounding_mode = v)
                 .controller(opt -> EnumControllerBuilder.create(opt)
                         .enumClass(ConfigServer.RoundingMode.class)
                         .formatValue(v -> Text.literal(v.toString())))
@@ -265,53 +398,53 @@ public class GuiBuilder {
                 "Merge Item Modifiers",
                 "If enabled, difficulty bonuses are added to existing attributes. If disabled, they replace them.",
                 DEFAULTS.meta.merge_item_modifiers,
-                () -> config.meta.merge_item_modifiers,
-                v -> config.meta.merge_item_modifiers = v
+                () -> config.merge_item_modifiers,
+                v -> config.merge_item_modifiers = v
         ));
 
         builder.option(buildBool(
                 "Global Loot Scaling",
                 "Master switch to enable or disable all loot modification features.",
                 DEFAULTS.meta.global_loot_scaling,
-                () -> config.meta.global_loot_scaling,
-                v -> config.meta.global_loot_scaling = v
+                () -> config.global_loot_scaling,
+                v -> config.global_loot_scaling = v
         ));
 
         builder.option(buildBool(
                 "Override Enchant Rarity",
                 "Allows generating rare enchantments more frequently on high-level items.",
                 DEFAULTS.meta.enable_scaled_items_rarity,
-                () -> config.meta.enable_overriding_enchantment_rarity,
-                v -> config.meta.enable_overriding_enchantment_rarity = v
+                () -> config.enable_overriding_enchantment_rarity,
+                v -> config.enable_overriding_enchantment_rarity = v
         ));
 
         builder.option(buildBool(
                 "Enable Scaled Items Rarity",
                 "Changes the item name color (Common, Rare, Epic) based on its power level.",
                 DEFAULTS.meta.enable_scaled_items_rarity,
-                () -> config.meta.enable_scaled_items_rarity,
-                v -> config.meta.enable_scaled_items_rarity = v
+                () -> config.enable_scaled_items_rarity,
+                v -> config.enable_scaled_items_rarity = v
         ));
 
         return builder.build();
     }
 
-    private static  ConfigCategory buildCategory(ConfigServer.Announcement key, ConfigServer config, Screen screen) {
-        var builder = ConfigCategory.createBuilder().name(Text.literal("Announcements"));
+    private static  OptionGroup buildCategory(ConfigServer.Announcement config, Screen screen) {
+        var builder = OptionGroup.createBuilder().name(Text.literal("§6§lAnnouncements"));
         var ctx = new BuilderContext<>(builder, screen, () -> MinecraftClient.getInstance().setScreen(create(screen)));
 
         builder.option(buildBool(
                 "Enabled",
                 "Show titles on area change.",
                 DEFAULTS.announcement.enabled,
-                () -> config.announcement.enabled, v -> config.announcement.enabled = v));
+                () -> config.enabled, v -> config.enabled = v));
 
 
         builder.option(Option.<Integer>createBuilder()
                 .name(Text.literal("Cooldown (Seconds)"))
                 .binding(
                         DEFAULTS.announcement.reannounce_cooldown_seconds,
-                        () -> config.announcement.reannounce_cooldown_seconds, v -> config.announcement.reannounce_cooldown_seconds = v)
+                        () -> config.reannounce_cooldown_seconds, v -> config.reannounce_cooldown_seconds = v)
                 .controller(opt -> IntegerSliderControllerBuilder.create(opt)
                         .range(0, 300)
                         .step(1))
@@ -320,7 +453,7 @@ public class GuiBuilder {
         builder.option(Option.<Integer>createBuilder()
                 .name(Text.literal("Interval Check (Seconds)"))
                 .binding(DEFAULTS.announcement.check_interval_seconds,
-                        () -> config.announcement.check_interval_seconds, v -> config.announcement.check_interval_seconds = v)
+                        () -> config.check_interval_seconds, v -> config.check_interval_seconds = v)
                 .controller(opt -> IntegerSliderControllerBuilder.create(opt)
                         .range(1, 10)
                         .step(1))
@@ -329,217 +462,70 @@ public class GuiBuilder {
         return builder.build();
     }
 
-    private static ConfigCategory buildCategory(ConfigServer key, ConfigServer config, Screen screen) {
-        var builder = ConfigCategory.createBuilder().name(Text.literal("Difficulty Settings"));
-        var ctx = new BuilderContext<>(builder, screen, () -> MinecraftClient.getInstance().setScreen(create(screen)));
+    private static OptionGroup buildCategory(ConfigServer config, Screen currentScreen) {
+        var builder = OptionGroup.createBuilder()
+                .name(Text.literal("§6§lDifficulty Configuration"))
+                .description(OptionDescription.of(Text.literal("Configure detailed scaling rules and loot tables.")))
+                .collapsed(false);
 
-        builder.group(OptionGroup.createBuilder()
-                .name(Text.literal("§6§l[ Per-Player Scaling ]"))
-                .description(OptionDescription.of(Text.literal("If enabled, difficulty scales dynamically based on how many players are in the area.")))
-                .collapsed(false) // Set to true if you want it closed by default
-
-                .option(buildBool(
-                        "Enabled",
-                        "If enabled, difficulty increases based on the number of players nearby.",
-                        DEFAULTS.per_player_difficulty.enabled,
-                        () -> config.per_player_difficulty.enabled,
-                        v -> config.per_player_difficulty.enabled = v
+        builder.option(ButtonOption.createBuilder()
+                .name(Text.literal("§e[>] Configure §lDifficulty Scaling"))
+                .description(OptionDescription.of(Text.literal("Edit Difficulty Presets and Hierarchical Rules (Biomes/Dimensions).")))
+                .action((screen, button) -> MinecraftClient.getInstance().setScreen(
+                        createGeneric(
+                                screen,
+                                Text.literal("Difficulty Scaling Settings"),
+                                config,
+                                (catBuilder) -> {
+                                    injectPresetEditor(catBuilder, config.difficulty_types);
+                                    injectRuleEditor(catBuilder, config.scaling_rules);
+                                },
+                                null
+                        )
                 ))
+                .build());
 
-                .option(Option.<ConfigServer.PerPlayerDifficulty.Counting>createBuilder()
-                        .name(Text.literal("Counting Mode"))
-                        .description(OptionDescription.of(Text.literal("Determines how would the difficulty scales relative to player count\n\n- §eEVERYWHERE§r§f: Counts all players in world/server, regardless of dimension they're in\n\n - §eDIMENSIONS§r§f: Counts all players from each dimensions")))
-                        .binding(
-                                DEFAULTS.per_player_difficulty.counting,
-                                () -> config.per_player_difficulty.counting,
-                                v -> config.per_player_difficulty.counting = v
+        builder.option(ButtonOption.createBuilder()
+                .name(Text.literal("§e[>] Configure §lLoot Scaling"))
+                .description(OptionDescription.of(Text.literal("Edit Loot Rules and Quality Bonuses.")))
+                .action((screen, button) -> MinecraftClient.getInstance().setScreen(
+                        createGeneric(
+                                screen,
+                                Text.literal("Loot Scaling Settings"),
+                                config.loot_scaling,
+                                (catBuilder) -> {
+                                    injectEditor(catBuilder, config.loot_scaling);
+                                },
+                                null
                         )
-                        .controller(opt -> EnumControllerBuilder.create(opt)
-                                .enumClass(ConfigServer.PerPlayerDifficulty.Counting.class)
-                        )
-                        .build())
+                ))
+                .build());
 
-                .option(Option.<Integer>createBuilder()
-                        .name(Text.literal("Max Players Cap"))
-                        .description(OptionDescription.of(Text.literal("The maximum number of players that contribute to the difficulty scaling.")))
-                        .binding(
-                                DEFAULTS.per_player_difficulty.cap,
-                                () -> config.per_player_difficulty.cap,
-                                v -> config.per_player_difficulty.cap = v
-                        )
-                        .controller(opt -> IntegerSliderControllerBuilder.create(opt).range(1, 20).step(1))
-                        .build())
-                .build()
-        );
-
-        addGenericList(
-                ctx, "§6§l[ Difficulty Presets ] ", "Preset",
-                config.difficulty_types,
-                () -> new ConfigServer.DifficultyType("new_preset"),
-                (preset) -> {
-                    String p = (preset.parent == null || preset.parent.isEmpty()) ? "Root" : preset.parent;
-                    return "§f" + preset.name + " §7[<" + p + "]";
-                },
-                (preset) -> "§7Parent: " + (preset.parent.isEmpty() ? "None" : preset.parent) +
-                        "\n§7Contains " + preset.entities.size() + " entity rules.",
-                (c, preset) -> {
-                    var b = c.builder();
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Preset Name"))
-                            .binding(preset.name, () -> preset.name, v -> preset.name = v)
-                            .controller(StringControllerBuilder::create)
-                            //.addListener(onUpdate(v -> preset.name = v, c.refreshSelf()))
-                            .build());
-
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Preset Parent"))
-                            .binding(preset.parent, () -> preset.parent, v -> preset.parent = v)
-                            .controller(StringControllerBuilder::create)
-                            //.addListener(onUpdate(v -> preset.name = v, c.refreshSelf()))
-                            .build());
-
-                    addSubListButton(
-                            c,"Entity Rules", "Rule",
-                            preset.entities,
-                            ConfigServer.EntityModifier::new,
-                            EntityModifier::getSummary,
-                            (entityRule) -> {
-                                int count = entityRule.attributes.size();
-                                String xp = (entityRule.experience_multiplier > 0) ? " | XP x" + entityRule.experience_multiplier : "";
-                                return "§7" + count + " Attribute Modifiers" + xp;
-                            },
-                            GuiBuilder::injectEditor
-                    );
-                }
-        );
-
-        addGenericList(
-                ctx,
-                "§6§l[ Hierarchical Rules ]", "Rule",
-                config.scaling_rules,
-                ConfigServer.ScalingRule::new,
-                (rule) -> {
-                    String target = rule.match.dimension.isEmpty() ? "Global" : rule.match.dimension;
-                    if (!rule.match.structure.isEmpty()) target = rule.match.structure;
-                    return "§f" + target + " §7(Level " + rule.difficulty.level + ")";
-                },
-                (rule) -> "§7Overrides: " + rule.overrides.size() + "\n§7Difficulty: " + rule.difficulty.name,
-                GuiBuilder::injectEditor);
 
         return builder.build();
     }
-
-    private static ConfigCategory buildCategory(ConfigServer.Rewards key, ConfigServer config, Screen screen) {
-        var builder = ConfigCategory.createBuilder().name(Text.literal("Loot Scaling"));
-        var ctx = new BuilderContext<>(builder, screen, () -> MinecraftClient.getInstance().setScreen(create(screen)));
-
-        addGenericList(
-                ctx,
-                "§6§l[ Weapons List ]", "Weapon Rule",
-                config.loot_scaling.weapons,
-                ConfigServer.ItemModifier::new,
-                ConfigServer.ItemModifier::getSummary,
-
-                (item) -> {
-                    if (item.attributes.isEmpty()) return "§cNo attributes defined.";
-                    // Preview the first attribute
-                    var first = item.attributes.get(0);
-                    return "§7" + first.getSummary() + (item.attributes.size() > 1 ? "..." : "");
-                },
-                (c, item) -> {
-                    if (item.item_matches == null) item.item_matches = new ConfigServer.ItemModifier.Filters();
-                    var b = c.builder();
-                    // id dropdown
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Target Item ID"))
-                            .description(OptionDescription.of(Text.literal("Leave empty to match by Regex.")))
-                            .binding("", () -> item.item_matches.id, v -> item.item_matches.id = v)
-                            .controller(opt -> DropdownStringControllerBuilder.create(opt).values(getRegistryIds(Registries.ITEM)))
-                            .build());
-
-                    // regex field
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Loot Table Regex"))
-                            .binding("", () -> item.item_matches.loot_table_regex, v -> item.item_matches.loot_table_regex = v)
-                            .controller(StringControllerBuilder::create)
-                            .build());
-
-                    // attribute sublist (Recursive)
-                    addSubListButton(
-                            c,
-                            "Attributes", "Attribute",
-                            item.attributes,
-                            () -> new ConfigServer.AttributeModifier("minecraft:generic.attack_damage", 1.0f),
-                            AttributeModifier::getSummary,
-                            (attr) -> "§7Operation: " + attr.operation + "\n§7Value: " + attr.value,
-                            GuiBuilder::injectEditor
-                    );
-                }
-        );
-
-        // ARMOR LIST
-        addGenericList(ctx,
-                "§6§l[ Armor List ]",
-                "Armor Rule", config.loot_scaling.armor,
-                ConfigServer.ItemModifier::new,
-                ConfigServer.ItemModifier::getSummary,
-
-                (item) -> {
-                    if (item.attributes.isEmpty()) return "§cNo attributes defined.";
-                    // Preview the first attribute
-                    var first = item.attributes.get(0);
-                    return "§7" + first.getSummary() + (item.attributes.size() > 1 ? "..." : "");
-                },
-                (c, item) -> {
-                    if (item.item_matches == null) item.item_matches = new ConfigServer.ItemModifier.Filters();
-
-                    var b = c.builder();
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Target Item ID"))
-                            .binding("", () -> item.item_matches.id, v -> item.item_matches.id = v)
-                            .controller(opt -> DropdownStringControllerBuilder.create(opt).values(getRegistryIds(Registries.ITEM)))
-                            .build());
-
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Loot Table Regex"))
-                            .binding("", () -> item.item_matches.loot_table_regex, v -> item.item_matches.loot_table_regex = v)
-                            .controller(StringControllerBuilder::create)
-                            .build());
-
-                    addSubListButton(c,
-                            "Attributes", "Attribute",
-                            item.attributes,
-                            () -> new ConfigServer.AttributeModifier("minecraft:generic.armor", 1.0f),
-                            AttributeModifier::getSummary,
-                            (attr) -> "§7Operation: " + attr.operation + "\n§7Value: " + attr.value,
-                            GuiBuilder::injectEditor
-                    );
-                }
-        );
-
-        return builder.build();
-    }
-
 
     // -- MAIN ENTRY POINT
-
-    public static Screen create(Screen parent) {
+    public static Screen create(Screen thisScreen) {
         var config = ConfigServer.fetch();
 
         return YetAnotherConfigLib.createBuilder()
-                .title(Text.literal("Dungeon Difficulty"))
-                .category(buildCategory(config.meta, config, parent))
-                .category(buildCategory(config.announcement, config, parent))
-                .category(buildCategory(config, config, parent))
-                .category(buildCategory(config.loot_scaling, config, parent))
+                .title(Text.literal("Dungeon Scaling Settings"))
+                .category(ConfigCategory.createBuilder()
+                        .name(Text.literal("Dungeon Scaling Settings"))
+                        .group(buildCategory(config.meta, thisScreen))
+                        .group(buildCategory(config.announcement, thisScreen))
+                        .group(buildCategory(config, thisScreen))
+                        .build()
+                )
                 .save(() -> {
                     AutoConfig.getConfigHolder(ConfigServer.class).save();
 
-                    MinecraftClient.getInstance().execute(() -> {
-                        MinecraftClient.getInstance().setScreen(create(parent));
-                    });
+                    MinecraftClient.getInstance().execute(
+                            () -> MinecraftClient.getInstance().setScreen(create(thisScreen))
+                    );
                 })
                 .build()
-                .generateScreen(parent);
+                .generateScreen(thisScreen);
     }
 }
