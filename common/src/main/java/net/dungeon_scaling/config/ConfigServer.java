@@ -6,11 +6,13 @@ import me.shedaniel.autoconfig.annotation.Config;
 import net.dungeon_scaling.DungeonScaling;
 import net.dungeon_scaling.logic.DifficultyTypes;
 import net.dungeon_scaling.util.Debugger;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Random;
+import java.util.function.Function;
 
 @Config(name = DungeonScaling.MODID + "-server")
 public class ConfigServer implements ConfigData {
@@ -115,6 +117,60 @@ public class ConfigServer implements ConfigData {
         public Context match = new Context();
         public DifficultyReference difficulty = new DifficultyReference();
         public List<ScalingRule> overrides = new ArrayList<>();
+
+        public String getSummary() {
+            if (match.entity != null && !match.entity.isEmpty()) {
+                return match.entity;
+            }
+            if (match.structure != null && !match.structure.isEmpty()) {
+                return match.structure;
+            }
+            if (match.biome != null && !match.biome.isEmpty()) {
+                return match.biome;
+            }
+            if (match.dimension != null && !match.dimension.isEmpty()) {
+                return match.dimension;
+            }
+
+            return "Global / Anywhere";
+        }
+
+        public String getDetails() {
+            var summary_difficulty = String.format("§f%s §6(Lvl %d)", difficulty.name, difficulty.level);
+            List<String> summary_locations = getLocations();
+
+            var summary_locations_final = "§7Applied Region(s): \n";
+
+            if (summary_locations.isEmpty()) summary_locations_final += "§8Global / Anywhere ";
+            else summary_locations_final += String.join("\n§8- §r", summary_locations);
+
+            var summary_overrides = "";
+            if (overrides != null && !overrides.isEmpty()) {
+                summary_overrides = String.format("\n§e+ %d other sub-override(s)", overrides.size());
+            }
+
+            return summary_difficulty + "\n" + summary_locations_final + "\n" + summary_overrides;
+        }
+
+        private @NotNull List<String> getLocations() {
+            List<String> summary_locations = new ArrayList<>();
+
+            Function<String, String> clean = s -> s.replace("minecraft:", "").replace("dungeon_difficulty:", "");
+
+            if (match.entity != null && !match.entity.isEmpty()) {
+                summary_locations.add("§dMob(s): " + clean.apply(match.entity));
+            }
+            if (match.structure != null && !match.structure.isEmpty()) {
+                summary_locations.add("§bStructure(s): " + clean.apply(match.structure));
+            }
+            if (match.biome != null && !match.biome.isEmpty()) {
+                summary_locations.add("§aBiome(s): " + clean.apply(match.biome));
+            }
+            if (match.dimension != null && !match.dimension.isEmpty()) {
+                summary_locations.add("§7Dimension: " + clean.apply(match.dimension));
+            }
+            return summary_locations;
+        }
     }
 
     public enum Operation { ADDITION, MULTIPLY_BASE }
@@ -209,12 +265,20 @@ public class ConfigServer implements ConfigData {
         }
 
         public String getSummary() {
-            String attrName = attribute.replace("minecraft:generic.", "").replace("minecraft:player.", "");
-            boolean doesMultiply = (operation == Operation.MULTIPLY_BASE);
-            String suffix = doesMultiply ? "%" : "";
+            var attrName = attribute.replace("minecraft:generic.", "").replace("minecraft:player.", "");
+            var doesMultiply = (operation == Operation.MULTIPLY_BASE);
+            var suffix = doesMultiply ? "%" : "";
             var attrValue = doesMultiply ? value * 100 : value;
 
             return String.format("+%.1f%s %s", attrValue, suffix, attrName);
+        }
+
+        public String getDetails() {
+            var attrName = "Attribute: " + attribute;
+            var attrValue = "Value Modify: " + value;
+            var attrOper = "Operation: " + operation;
+
+            return attrName + "\n" + attrValue + "\b" + attrOper;
         }
 
         private static final Random rng = new Random();

@@ -85,8 +85,8 @@ public class GuiBuilder {
                 "Attributes", "Attribute",
                 item.attributes,
                 () -> new ConfigServer.AttributeModifier("minecraft:generic.movement_speed", 0.1f),
-                a -> a.attribute,
-                (attr) -> "§7Operation: " + attr.operation + "\n§7Value: " + attr.value,
+                AttributeModifier::getSummary,
+                AttributeModifier::getDetails,
                 GuiBuilder::injectEditor);
     }
 
@@ -102,19 +102,19 @@ public class GuiBuilder {
                 .binding(item.item_matches.id,
                         () -> item.item_matches.id,
                         v -> item.item_matches.id = v)
-                .controller(opt -> DropdownStringControllerBuilder.create(opt).values(getRegistryIds(Registries.ITEM)))
-                .addListener(onUpdate(val -> item.item_matches.id = val, ctx.refreshSelf()))
+                .controller(StringControllerBuilder::create)
+                //.addListener(onUpdate(val -> item.item_matches.id = val, ctx.refreshSelf()))
                 .build());
 
         // loot table Regex
         builder.option(Option.<String>createBuilder()
                 .name(Text.literal("Loot Table Regex"))
-                .description(OptionDescription.of(Text.literal("Matches the loot table name (e.g. '.*chests/.*'). Leave empty to ignore.")))
+                .description(OptionDescription.of(Text.literal("Matches the loot table name (e.g. '~.*chests/.*'). Leave empty to ignore.")))
                 .binding(item.item_matches.loot_table_regex,
                         () -> item.item_matches.loot_table_regex,
                         v -> item.item_matches.loot_table_regex = v)
                 .controller(StringControllerBuilder::create)
-                .addListener(onUpdate(val -> item.item_matches.loot_table_regex = val, ctx.refreshSelf()))
+                //.addListener(onUpdate(val -> item.item_matches.loot_table_regex = val, ctx.refreshSelf()))
                 .build());
 
         // rarity regex
@@ -133,8 +133,8 @@ public class GuiBuilder {
                 "Attributes", "Attribute",
                 item.attributes,
                 () -> new ConfigServer.AttributeModifier("minecraft:generic.armor", 0f),
-                a -> a.attribute,
-                (attr) -> "§7Op: " + attr.operation + " | Val: " + attr.value,
+                AttributeModifier::getSummary,
+                AttributeModifier::getDetails,
                 GuiBuilder::injectEditor);
     }
 
@@ -153,7 +153,7 @@ public class GuiBuilder {
                 .description(OptionDescription.of(Text.literal("The ID of the Difficulty Preset to apply here (e.g. 'adventure').")))
                 .binding(item.difficulty.name, () -> item.difficulty.name, v -> item.difficulty.name = v)
                 .controller(opt -> DropdownStringControllerBuilder.create(opt)
-                        .values(validDifficulties) // Pass the list we generated above!
+                        .values(validDifficulties)
                 )
                 .addListener(onUpdate(val -> item.difficulty.name = val, ctx.refreshSelf()))
                 .build()
@@ -190,8 +190,8 @@ public class GuiBuilder {
                 "Sub-Overrides", "Override",
                 item.overrides,
                 ConfigServer.ScalingRule::new,
-                r -> r.match.structure.isEmpty() ? r.match.dimension : r.match.structure,
-                r -> "§7Difficulty: " + r.difficulty.name + " (Lvl " + r.difficulty.level + ")",
+                ScalingRule::getSummary,
+                ScalingRule::getDetails,
                 GuiBuilder::injectEditor);
     }
 
@@ -203,40 +203,8 @@ public class GuiBuilder {
                 ConfigServer.ItemModifier::new,
                 ConfigServer.ItemModifier::getSummary,
 
-                (item) -> {
-                    if (item.attributes.isEmpty()) return "§cNo attributes defined.";
-                    var first = item.attributes.get(0);
-                    return "§7" + first.getSummary() + (item.attributes.size() > 1 ? "..." : "");
-                },
-                (c, item) -> {
-                    if (item.item_matches == null) item.item_matches = new ConfigServer.ItemModifier.Filters();
-                    var b = c.builder();
-                    // id dropdown
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Target Item ID"))
-                            .description(OptionDescription.of(Text.literal("Leave empty to match by Regex.")))
-                            .binding("", () -> item.item_matches.id, v -> item.item_matches.id = v)
-                            .controller(opt -> DropdownStringControllerBuilder.create(opt).values(getRegistryIds(Registries.ITEM)))
-                            .build());
-
-                    // regex field
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Loot Table Regex"))
-                            .binding("", () -> item.item_matches.loot_table_regex, v -> item.item_matches.loot_table_regex = v)
-                            .controller(StringControllerBuilder::create)
-                            .build());
-
-                    // attribute sublist (Recursive)
-                    addSubListButton(
-                            c,
-                            "Attributes", "Attribute",
-                            item.attributes,
-                            () -> new ConfigServer.AttributeModifier("minecraft:generic.attack_damage", 1.0f),
-                            AttributeModifier::getSummary,
-                            (attr) -> "§7Operation: " + attr.operation + "\n§7Value: " + attr.value,
-                            GuiBuilder::injectEditor
-                    );
-                }
+                (item) -> "§7" + item.attributes.size() + " attributes defined.",
+                GuiBuilder::injectEditor
         );
 
         // ARMOR LIST
@@ -246,38 +214,47 @@ public class GuiBuilder {
                 ConfigServer.ItemModifier::new,
                 ConfigServer.ItemModifier::getSummary,
 
-                (item) -> {
-                    if (item.attributes.isEmpty()) return "§cNo attributes defined.";
-                    // Preview the first attribute
-                    var first = item.attributes.get(0);
-                    return "§7" + first.getSummary() + (item.attributes.size() > 1 ? "..." : "");
-                },
-                (c, item) -> {
-                    if (item.item_matches == null) item.item_matches = new ConfigServer.ItemModifier.Filters();
-
-                    var b = c.builder();
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Target Item ID"))
-                            .binding("", () -> item.item_matches.id, v -> item.item_matches.id = v)
-                            .controller(opt -> DropdownStringControllerBuilder.create(opt).values(getRegistryIds(Registries.ITEM)))
-                            .build());
-
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Loot Table Regex"))
-                            .binding("", () -> item.item_matches.loot_table_regex, v -> item.item_matches.loot_table_regex = v)
-                            .controller(StringControllerBuilder::create)
-                            .build());
-
-                    addSubListButton(c,
-                            "Attributes", "Attribute",
-                            item.attributes,
-                            () -> new ConfigServer.AttributeModifier("minecraft:generic.armor", 1.0f),
-                            AttributeModifier::getSummary,
-                            (attr) -> "§7Operation: " + attr.operation + "\n§7Value: " + attr.value,
-                            GuiBuilder::injectEditor
-                    );
-                }
+                (item) -> "§7" + item.attributes.size() + " attributes defined.",
+                GuiBuilder::injectEditor
         );
+    }
+
+    private static void injectEditor(BuilderContext<OptionGroup.Builder> ctx, ConfigServer.DifficultyType set) {
+        var builder = ctx.builder();
+        var config = ConfigServer.fetch();
+
+        builder.option(Option.<String>createBuilder()
+                .name(Text.literal("Name"))
+                .binding(set.name,
+                        () -> set.name,
+                        v -> set.name = v
+                )
+                .controller(StringControllerBuilder::create).build());
+
+        List<String> parents = new ArrayList<>(config.difficulty_types.stream()
+                .map(t -> t.name)
+                .filter(n -> !n.equals(set.name))
+                .toList());
+
+        parents.add(0, "");
+
+        builder.option(Option.<String>createBuilder()
+                .name(Text.literal("Parent"))
+                .binding(
+                        set.parent,
+                        () -> set.parent,
+                        v -> set.parent = v
+                )
+                .controller(
+                        o -> DropdownStringControllerBuilder.create(o)
+                                .values(parents)
+                )
+                .build());
+
+        addSubListButton(ctx, "Entity Rules", "Rule", set.entities, EntityModifier::new,
+                EntityModifier::getSummary,
+                m -> "§7" + m.attributes.size() + " Modifiers",
+                GuiBuilder::injectEditor);
     }
 
 
@@ -324,51 +301,18 @@ public class GuiBuilder {
                 "§6§lDifficulty Presets", "Preset", config,
                 () -> new DifficultyType("new_preset"),
                 p -> p.name,
-                p -> "§7Parent: " + (p.parent != null ? p.parent : ""),
-                (c, p) -> {
-                    var b = c.builder();
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Name"))
-                            .binding(p.name,
-                                    () -> p.name,
-                                    v -> p.name = v
-                            )
-                            .controller(StringControllerBuilder::create).build());
-
-                    List<String> parents = new ArrayList<>(config.stream()
-                            .map(t -> t.name)
-                            .filter(n -> !n.equals(p.name))
-                            .toList());
-
-                    parents.add(0, "");
-
-                    b.option(Option.<String>createBuilder()
-                            .name(Text.literal("Parent"))
-                            .binding(
-                                    p.parent,
-                                    () -> p.parent,
-                                    v -> p.parent = v
-                            )
-                            .controller(
-                                    o -> DropdownStringControllerBuilder.create(o)
-                                            .values(parents)
-                            )
-                            .build());
-
-                    addSubListButton(c, "Entity Rules", "Rule", p.entities, EntityModifier::new,
-                            m -> m.entity_matches.type == null ? "All Mobs" : m.entity_matches.type,
-                            m -> "§7" + m.attributes.size() + " Modifiers",
-                            GuiBuilder::injectEditor);
-                }
+                p -> "§7Parent: " + (!p.parent.isEmpty() ? p.parent : "None (root)"),
+                GuiBuilder::injectEditor
         );
     }
 
     private static void injectRuleEditor(BuilderContext<ConfigCategory.Builder> ctx, List<ConfigServer.ScalingRule> config) {
         addGenericList(ctx, "§6§lHierarchical Rules", "Rule", config,
                 ScalingRule::new,
-                r -> r.match.dimension.isEmpty() ? (r.match.biome.isEmpty() ? "Global Rule" : r.match.biome) : r.match.dimension,
-                r -> "§7" + r.difficulty.name + " (Lvl " + r.difficulty.level + ")",
-                GuiBuilder::injectEditor);
+                ScalingRule::getSummary,
+                ScalingRule::getDetails,
+                GuiBuilder::injectEditor
+        );
     }
 
     // -- CATEGORY BUILDERS

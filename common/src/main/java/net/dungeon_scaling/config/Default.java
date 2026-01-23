@@ -109,7 +109,7 @@ public class Default {
 
         // END TREE
         var end = ruleDim("minecraft:the_end", "adventure", 4);
-        end.overrides.add(ruleBiome("minecraft:the_end", "heroic", 5));
+        // end.overrides.add(ruleBiome("minecraft:the_end", "heroic", 5));
         end.overrides.add(ruleStructure("#dungeon_scaling:level_6", "dungeon", 6));
         end.overrides.add(ruleStructure("#dungeon_scaling:level_5", "dungeon", 5));
         end.overrides.add(ruleEntity("minecraft:ender_dragon", "dungeon", 4));
